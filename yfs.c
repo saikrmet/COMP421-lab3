@@ -1,4 +1,16 @@
-#include "cache.h"
+#include "cacheMgmt.h"
+#include <comp421/yalnix.h>
+#include <comp421/filesystem.h>
+
+#include <comp421/hardware.h>
+#include <comp421/iolib.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+
+
 
 // helpers 
 int getDir(char* file, int inum);
@@ -11,6 +23,7 @@ int getPI(short d, char* pn);
 char* getPath(char* pn);
 int newDirectory(char* fn, int new_type, short pi);
 void createFreeInodeAndBlock();
+struct dir_entry initEntry(char* file, short incode);
 
 // handlers 
 int create_handler(char *pathname, short directory);
@@ -32,6 +45,12 @@ int open_handler(char *pn, int pi);
 // final message handler 
 int message_handle(char* msg, int pid);
 
+int inode_size;
+int block_size;
+
+short* inodes_free;
+short* blocks_free;
+
 
 // PROCEDURE CALL REQUESTS>>>>>>
 
@@ -50,7 +69,7 @@ int read_handler(int fd, void *buf, int size, short curr) {
     // loop through to set the placement correctly and return it
     int placement = 0;
 	struct inode* fi = d->value;
-    new_size = fi->size
+    int new_size = fi->size;
     while(placement < size && fd + placement < new_size) {
         char* blck = getBlockInputPlace(d, 0, fd + placement);
 		int remainingSpace = BLOCKSIZE - ((fd + placement) % BLOCKSIZE);
@@ -67,7 +86,7 @@ int read_handler(int fd, void *buf, int size, short curr) {
 int write_handler(int fd, void *buf, int size, short curr) {
     struct inodeMetadata* d = readInodeFromDisk(curr);
     d->isDirty = 1;
-    if(info->inodeNum == -1 || resizeFile(d, fd + size) == ERROR) return ERROR;
+    if(d->num == -1 || resizeFile(d, fd + size) == ERROR) return ERROR;
     int placement = 0;
     // loop through again to set placement similar to read_handler
     while(placement < size && fd + placement < d->value->size) {
@@ -112,17 +131,17 @@ int link_handler(char *oldName, char *newName, short directory) {
 
 int unlink_handler(char *pathname, short directory) {
     short d = open_handler(pathname, directory);
-    struct inodeMetadata* temp = readDiskInode(d);
+    struct inodeMetadata* temp = readInodeFromDisk(d);
     if(temp->value->type == INODE_DIRECTORY) {
 		printf("bad link (unlink)\n");
 		return ERROR;
     }
     if (temp->num == -1)
     {
-        printf("bad link (unlink handler) \n")
-        return ERROR
+        printf("bad link (unlink handler) \n");
+        return ERROR;
     }
-    short pi = getParentInum(pathname, directory);
+    short pi = getPI(directory, pathname);
     removeFile(d, pi);
     temp->value->nlink-=1;
     temp->isDirty = 1;
@@ -131,26 +150,30 @@ int unlink_handler(char *pathname, short directory) {
 
 
 int symLink_handler(char *oldName, char *newName, short directory) {
-    short inum = createFile(getPath(newName), getPI(directory, newName), INODE_SYMLINK);
+    short inum = newDirectory(getPath(newName), getPI(directory, newName), INODE_SYMLINK);
     if(inum == ERROR){
 		return ERROR;
 	}
-    return write_handler((void*)oldName, strlen(oldName), inum, 0);
+    return write_handler(0,(void*)oldName, strlen(oldName), inum);
 }
 
 int readLink_handler(char *pathname, char *buf, int len, short directory) {
-    return _ysfRead(buf, len, checkDir(getPI(directory,pathname), getPath(pathname)), 0);
+    return read_handler(0, buf, len, getDir(getPath(pathname), getPI(directory,pathname)));
 }
 
 
 int mkDir_handler(char *pathname, short directory) {
-    short file_temp = createFile(getPath(pathname), getPI(directory,pathname), INODE_DIRECTORY);
+
+    short pi = getPI(directory,pathname);
+    char* pn = getPath(pathname);
+    
+    short file_temp = newDirectory(pn, INODE_DIRECTORY, pi);
     if(file_temp == ERROR){
-        TracePrint(1, "mkdir handler error ")
+        TracePrintf(1, "mkdir handler error ");
 		return ERROR;
 	}
-    addDirectory(file_temp, initEntry(".",file_temp));
-    addDirectory(file_temp, initEntry( "..", parentInum));
+    createDir(initEntry(".",file_temp), file_temp);
+    createDir(initEntry( "..", pi), file_temp);
     return 0;
 }
 
@@ -161,28 +184,28 @@ int rmDir_handler(char *pathname, short directory) {
 		return ERROR;
     }
     short open_i = open_handler(pathname, directory);
-    struct inodeMetadata* d = readDiskInode(open_i);
+    struct inodeMetadata* d = readInodeFromDisk(open_i);
     if (d->value->type != INODE_DIRECTORY) {
         printf("bad directory \n");
         return ERROR;
     }
     if(d->num == -1) {
-		printf("ysf: Invalid directory\n");
+		printf("bad directory\n");
 		return ERROR;
     }
 
-    int c=2;
-    for(c; c < d->inodeVal->size / sizeof(struct dir_entry); c++) {
+    int c;
+    for(c = 2; c < d->value->size / sizeof(struct dir_entry); c++) {
         // create emptry directory entry to read
 		struct dir_entry de;
 		read_handler(sizeof(de)*c,(void*)&de, sizeof(de), open_i);
-		if(entry.open_i != 0) {
+		if(de.inum != 0) {
 			printf("directory is empty \n");
 			return ERROR;
 		}
     }
     inodes_free[open_i] = 0;  
-    delFileFromDir(getPI(directory, pathname), open_i);
+    removeFile(getPI(directory, pathname), open_i);
     d->value->type = INODE_FREE;
     d->isDirty = 1;
     return 0;
@@ -190,7 +213,8 @@ int rmDir_handler(char *pathname, short directory) {
 
 
 int chDir_handler(char *pathname, short directory) {
-    if(readDiskInode(open_handler(pathname, directory))->value->type != INODE_DIRECTORY) {
+    short d = open_handler(pathname, directory);
+    if(readInodeFromDisk(d)->value->type != INODE_DIRECTORY) {
 		printf("bad directory\n");
 		return ERROR;
     }
@@ -200,8 +224,8 @@ int chDir_handler(char *pathname, short directory) {
 
 int stat_handler(char *pathname, struct Stat* statbuf, short directory) {
     short inum = open_handler(pathname, directory);
-    struct inodeMetadata* id = readDiskInode(inum);
-    if(id->inodeNum == -1) {
+    struct inodeMetadata* id = readInodeFromDisk(inum);
+    if(id->num == -1) {
 		printf("bad name for stat handler\n");
 		return ERROR;
     }
@@ -223,16 +247,17 @@ int shutdown_handler(void) {
 }
 
 int open_handler(char *pn, int pi) {
-	TracePrintf(1, "createInode\n");
+	TracePrintf(1, "open_handler\n");
     if(pn == NULL) return pi;
     int curr;
+    char name[1+DIRNAMELEN];
     memset(name,'\0',DIRNAMELEN + 1);
     curr = (pn[0] != '/') ? pi : ROOTINODE;
     while(*pn == '/') {
 		pn+=1;
     }
     int links = 0;
-    char name[1+DIRNAMELEN];
+    
     while(strlen(pn) != 0) {
 		memset(name,'\0',DIRNAMELEN + 1);
         int s = strlen(pn);
@@ -263,7 +288,7 @@ int open_handler(char *pn, int pi) {
 			if(links < MAXSYMLINKS) {
 				int inodeSize = data->value->size;
 				char* callocPathName = (char*)calloc(sizeof(char) * inodeSize + s + 1, 1);
-				struct blockInfo* block = readBlockFromDisk(data->value->direct[0]);
+				struct blockMetadata* block = readBlockFromDisk(data->value->direct[0]);
 				memcpy(callocPathName, block->data, inodeSize);
 
 				if(s > 0) {
@@ -304,7 +329,7 @@ struct dir_entry initEntry(char* file, short incode) {
     int f = strlen(file);
     if (f > DIRNAMELEN) f = DIRNAMELEN;
     memset(&de.name, '\0', DIRNAMELEN);
-    memcpy(&de.name, filename, f);
+    memcpy(&de.name, file, f);
     return de;
 }
 
@@ -320,7 +345,7 @@ int getDir(char* file, int inum) {
     int s = data->value->size / sizeof(struct dir_entry);
     int i;
     for(i = 0; i < s; i++) {
-        if(read_handler((void*)&de, sizeof(de), inum, i * sizeof(struct dir_entry)) == ERROR) 
+        if(read_handler(i * sizeof(struct dir_entry), (void*)&de, sizeof(de), inum) == ERROR) 
         {
             printf("error getting directory\n");
             return ERROR;
@@ -335,24 +360,24 @@ int getDir(char* file, int inum) {
 // in the directory 
 int removeFile(int fi, int di) {
     TracePrintf(1, "removeFile\n");
-    struct inodeMetadata* data = readInodeFromDisk(inum);
-    # always error check. 
+    struct inodeMetadata* data = readInodeFromDisk(di);
+    // always error check. 
     if(data->num == ERROR) {
         printf("error removing file\n");
 		return ERROR;
     }
     int s = data->value->size / sizeof(struct dir_entry);
     struct dir_entry de;
-    int i = 2;
-    for(i; i < s; i++) {
-		if(read_handler((void*)&de, sizeof(de), di, i * sizeof(struct dir_entry)) == ERROR) {
+    int i;
+    for(i = 2; i < s; i++) {
+		if(read_handler(i * sizeof(struct dir_entry), (void*)&de, sizeof(de), di) == ERROR) {
             printf("error removing file\n");
 			return ERROR;
 		}
 		if(fi == de.inum) {
 			char* empty = "\0";
 			struct dir_entry de_temp = initEntry(empty, 0);
-			write_handler((void*)&de_temp, sizeof(de_temp), di, i * sizeof(struct dir_entry));
+			write_handler(i * sizeof(struct dir_entry), (void*)&de_temp, sizeof(de_temp), di);
 			return 0;
 		}
     }
@@ -363,19 +388,19 @@ int removeFile(int fi, int di) {
 
 int getFB() {
 	TracePrintf(1, "");
-    int i = 0;
+    int i;
     // check 0 blocks first
-    for (i; i < NUM_BLOCKS; ++i) {
-		if(freeBlockList[i] == 0) {
-			freeBlockList[i] = 1;
+    for (i=0; i < block_size; ++i) {
+		if(blocks_free[i] == 0) {
+			blocks_free[i] = 1;
 			return i;
 		}
     }
     syncDiskCache();
     createFreeInodeAndBlock();
 
-    for (i = 0; i < NUM_BLOCKS; ++i) {
-		if(freeBlockList[i] == 0) {
+    for (i = 0; i < block_size; ++i) {
+		if(blocks_free[i] == 0) {
 			TracePrintf(1, "got block\n");
 			return i;
 		}
@@ -411,7 +436,7 @@ int resizeFile(struct inodeMetadata* inodeData, int s) {
         }
     }
     if(size_c == BLOCKSIZE * NUM_DIRECT && s > size_c) {
-        int fb_temp = getFreeBlock();
+        int fb_temp = getFB();
         // forget to error check
 		if(fb_temp == ERROR) return ERROR;
 		fi->indirect = fb_temp;
@@ -423,8 +448,8 @@ int resizeFile(struct inodeMetadata* inodeData, int s) {
 		struct blockMetadata* bl = readBlockFromDisk(extraBlockNum);
 		bl->isDirty = 1;
 		int* bl_array = (int*)(bl->data);
-		while(size_c < BLOCKSIZE * (NUM_DIRECT + BLOCKSIZE / sizeof(int)) && size_c < s ) {
-			int fb = getFreeBlock();
+		while(size_c < BLOCKSIZE * (NUM_DIRECT + BLOCKSIZE / sizeof(int)) && size_c < s) {
+			int fb = getFB();
 			if(fb == ERROR)return ERROR;
             // set array to free block 
 			bl_array[size_c / BLOCKSIZE - NUM_DIRECT] = fb;
@@ -459,18 +484,18 @@ char* getBlockInputPlace(struct inodeMetadata* id, int dirty_temp, int place) {
 
 
 int createDir(struct dir_entry de, short di) {
-	TracePrintf(1, "addDirectory\n");
+	TracePrintf(1, "createDir\n");
     struct inodeMetadata* dd = readInodeFromDisk(di);
     
 	struct dir_entry temp;
     dd->isDirty = 1;
-    int s = dirInfo->value->size;
+    int s = dd->value->size;
     int idx = 0;
     while(idx < s) {
 
-		read_handler(&temp, sizeof(temp), di, idx);
+		read_handler(idx, &temp, sizeof(temp), di);
 		if(temp.inum == 0) {
-			int go = write_handler(&de, sizeof(de), di, idx);
+			int go = write_handler(idx, &de, sizeof(de), di);
 			if(go == ERROR) {
                 return ERROR;
                 
@@ -488,7 +513,7 @@ int createDir(struct dir_entry de, short di) {
         // update idx after every loop
 		idx += sizeof(temp);
     }
-    int go = write_handler(&de, sizeof(de), di, idx);
+    int go = write_handler(idx, &de, sizeof(de), di);
 
     if(go == ERROR) return ERROR;
 
@@ -501,19 +526,19 @@ int createDir(struct dir_entry de, short di) {
 
 int getPI(short d, char* pn) {
 	TracePrintf(1, "getPI\n");
-    int c = strlen(pn) - 1;
-    for(c; c >= 0; c--) {
+    int c;
+    for(c = strlen(pn) - 1; c >= 0; c--) {
         // if / symbol just break out to update i
 		if(pn[c] == '/') break;
     }
-    char* createSpace = (char*)malloc(i + 1 + 1);
-    memcpy(parentPath, pn, i + 1);
-    createSpace[i + 1] = '\0';
+    char* createSpace = (char*)malloc(c + 1 + 1);
+    memcpy(createSpace, pn, c + 1);
+    createSpace[c + 1] = '\0';
 
-    if(!(i + 1 == 1 && createSpace[0] == '/')) {
-		createSpace[i + 1-1] = '\0';
+    if(!(c + 1 == 1 && createSpace[0] == '/')) {
+		createSpace[c + 1-1] = '\0';
     }
-    short getPI = createInode(createSpace, d);
+    short getPI = open_handler(createSpace, d);
     free(createSpace);
     if(getPI == ERROR) return ERROR;
     else return getPI;
@@ -522,9 +547,9 @@ int getPI(short d, char* pn) {
 
 char* getPath(char* pn) {
 	TracePrintf(1, "getPath\n");
-    int c = strlen(pn) - 1;
+    int c;
     // loop through to check for / 
-    for(c; c>-1; c--) {
+    for(c=strlen(pn) - 1; c>-1; c--) {
 		if(pn[c] == '/') {
 			return pn + c + 1;
 		}
@@ -538,15 +563,15 @@ int newDirectory(char* fn, int new_type, short pi) {
     // if error and file exists already return error
     if(new_num == ERROR || new_num != 0) return ERROR;
     
-    short c = 0;
-    for(c; c < NUM_INODES; i++) {
+    short c;
+    for(c=0; c < inode_size; c++) {
 		if(inodes_free[c] == 0) {
 			new_num = c;
 			break;
 		}
     }
-    if(new_num == NUM_INODES) return ERROR;
-    inodes_free[i] = 1;
+    if(new_num == inode_size) return ERROR;
+    inodes_free[c] = 1;
     
     struct inodeMetadata* temp = readInodeFromDisk(new_num);
     temp->isDirty = 1;
@@ -578,45 +603,45 @@ void createFreeInodeAndBlock() {
     struct inodeMetadata* id = readInodeFromDisk(0);
     struct fs_header* fsh = (struct fs_header*)(id->value);
 
-    NUM_INODES = fsh->num_inodes;
-    NUM_BLOCKS = fsh->num_blocks;
+    inode_size = fsh->num_inodes;
+    inode_size = fsh->num_blocks;
 
     // initialize the free inodes list and free block list
-    inodes_free = (short*)malloc(NUM_INODES * sizeof(short));
+    inodes_free = (short*)malloc(inode_size * sizeof(short));
 
-    blocks_free = (short*)malloc(NUM_BLOCKS * sizeof(short));
+    blocks_free = (short*)malloc(block_size * sizeof(short));
      
     
 
-    int c = 0;
-    for (c; i < NUM_BLOCKS; ++x) {
+    int c;
+    for (c = 0; c < block_size; ++c) {
 		blocks_free[c] = 0;
-        if (c == 0) blocks_free[c] = 1
+        if (c == 0) blocks_free[c] = 1;
     }
-    for(c = 1; c < 1 + ((NUM_INODES + 1) * INODESIZE) / BLOCKSIZE; c++) {
+    for(c = 1; c < 1 + ((inode_size + 1) * INODESIZE) / BLOCKSIZE; c++) {
 		blocks_free[c] = 1;
     }
 
 
-    int x = 0
-    for (x; x < NUM_INODES; ++x) {
+    int x;
+    for (x = 0; x < inode_size; ++x) {
 		inodes_free[x] = 0;
-        if (c == 0 || c == 1) inodes_free[c] = 1
+        if (c == 0 || c == 1) inodes_free[c] = 1;
     }
-    for(x = 1; x < NUM_INODES + 1; x++) {
+    for(x = 1; x < inode_size + 1; x++) {
 		struct inode* di = readInodeFromDisk(x)->value;
 		
 		if(di->type != INODE_FREE) {
 			inodes_free[x] = 1;
 			int counter = 0;
-            di_size = di->size
+            int di_size = di->size;
 			while(counter * BLOCKSIZE < di_size && NUM_DIRECT> counter) {
 				blocks_free[di->direct[counter]] = 1;
-				counter += 1
+				counter += 1;
 			}
             // do one more check if the current counte ris less than the size 
 			if(counter * BLOCKSIZE < di_size) {
-                TracePrintf(1, "check if infinite looping \n")
+                TracePrintf(1, "check if infinite looping \n");
 				int* get_data = (int*)(readBlockFromDisk(di->indirect)->data);
 				blocks_free[di->indirect] = 1;
 				while(counter < (di_size + (BLOCKSIZE-1)) / BLOCKSIZE) {
@@ -713,7 +738,7 @@ int message_handle(char* msg, int pid) {
 	    memcpy(&curr_id, m, sizeof(curr_id));
         m += sizeof(curr_id);
 	    memcpy(&fd, m, sizeof(fd));
-	    char*  = calloc(1+curr_size, sizeof(char));
+	    char* temp_buf = calloc(1+curr_size, sizeof(char));
 	    CopyFrom(pid, temp_buf, curr_buffer, curr_size + 1);
 	    f = write_handler(fd, temp_buf, curr_size, curr_id);
 	    free(temp_buf);
@@ -725,7 +750,7 @@ int message_handle(char* msg, int pid) {
 	    memcpy(&id, m, sizeof(id));
 	    f = seek_handler(id);
         // free maybe ??? check later 
-        free(id);
+
 	    break;
 	}
 	case 7:{
@@ -902,14 +927,14 @@ int message_handle(char* msg, int pid) {
 	    memcpy(&directory, m, sizeof(directory));
 
 	    char* pn = (char*)calloc(1+pn_size, sizeof(char));
-	    struct Stat* sb = (struct Stat*)calloc(1, sizeof(struct Stat));
+	    struct Stat* sb2 = (struct Stat*)calloc(1, sizeof(struct Stat));
 	    CopyFrom(pid, pn, curr_pn, 1+pn_size);
 
-	    f = stat_handler(pn, sb, directory);
-	    CopyTo(pid, sb, sb, sizeof(struct Stat));
+	    f = stat_handler(pn, sb2, directory);
+	    CopyTo(pid, sb, sb2, sizeof(struct Stat));
 		
 	    free(pn);
-        free(sb);
+        free(sb2);
 
 	    break;
 	}
@@ -949,12 +974,20 @@ int main(int argc, char** argv) {
     createFreeInodeAndBlock();    
     Register(FILE_SERVER);
     printf("Creating YFS\n");
-    int pid = Fork();
-    if(pid == 0) {
-		Exec(argv[1], argv + 1);
-        // nothign happeend, halt the program. 
-		printf("Nothing happened, halting\n");
-		Halt();
+
+
+    if (argc > 1) {
+        int pid = Fork();
+
+        if (pid == 0) {
+            Exec(argv[1], argv + 1);
+            printf("exec fail\n");
+            Halt();
+        } else if (pid < 0) {
+            // Fork failed
+            printf("fork fail\n");
+            Halt();
+        }
     }
     
     while(1) {
@@ -970,8 +1003,8 @@ int main(int argc, char** argv) {
 			Exit(0);
 		}
 		int res = message_handle(msg, pid);
-		int c = 0;
-		for(c; c < 32; c++) {
+		int c;
+		for(c = 0; c < 32; c++) {
 			msg[c] = '\0';
 		}
 		memcpy(msg, &res, sizeof(res));
