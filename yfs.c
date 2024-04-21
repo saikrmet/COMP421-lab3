@@ -195,7 +195,7 @@ int rmDir_handler(char *pathname, short directory) {
     }
 
     int c;
-    for(c = 2; c < d->value->size / sizeof(struct dir_entry); c++) {
+    for(c = 2; c < (int)(d->value->size / sizeof(struct dir_entry)); c++) {
         // create emptry directory entry to read
 		struct dir_entry de;
 		read_handler(sizeof(de)*c,(void*)&de, sizeof(de), open_i);
@@ -448,7 +448,7 @@ int resizeFile(struct inodeMetadata* inodeData, int s) {
 		struct blockMetadata* bl = readBlockFromDisk(extraBlockNum);
 		bl->isDirty = 1;
 		int* bl_array = (int*)(bl->data);
-		while(size_c < BLOCKSIZE * (NUM_DIRECT + BLOCKSIZE / sizeof(int)) && size_c < s) {
+		while(size_c < (int)(BLOCKSIZE * (NUM_DIRECT + BLOCKSIZE / sizeof(int))) && size_c < s) {
 			int fb = getFB();
 			if(fb == ERROR)return ERROR;
             // set array to free block 
