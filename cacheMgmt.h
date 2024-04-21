@@ -1,5 +1,3 @@
-#include "yfs.h"
-
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -17,12 +15,12 @@ struct blockMetadata {
     struct blockMetadata* prev;
     struct blockMetadata* next;
     char data[BLOCKSIZE];
-}
+};
 
 struct blockEntry {
     int cacheKey;
     struct blockMetadata* metadata;
-}
+};
 
 struct inodeMetadata {
     int num;
@@ -30,12 +28,12 @@ struct inodeMetadata {
     struct inodeMetadata* prev;
     struct inodeMetadata* next;
     struct inode* value;
-}
+};
 
 struct inodeEntry {
     int cacheKey;
     struct inodeMetadata* metadata;
-}
+};
 
 void startCache();
 int syncDiskCache();

@@ -31,9 +31,10 @@ void createOFT() {
 int processPathname(char* oldPath, char* newPath) {
     int oldLen = strlen(oldPath);
     int newLen = 0;
+    int ptr1;
 
-    for (int ptr1 = 0; ptr1 < oldLen; ptr1++) {
-        if (oldPath[i] != '/' || oldPath[i + 1] != '/') {
+    for (ptr1 = 0; ptr1 < oldLen; ptr1++) {
+        if (oldPath[ptr1] != '/' || oldPath[ptr1 + 1] != '/') {
             newPath[newLen] = oldPath[ptr1];
             newLen++;
         }
@@ -55,7 +56,7 @@ int requestFileSys(void** args, int argNum, int* argSize, uint8_t opCode) {
     char msg[32];
     msg[0] = (char) opCode;
 
-    int i = 0;
+    int i;
     for (i = 0; i < argNum; i++) {
         if (argSize[i] != sizeof(void*) || *(void**) args[i] != NULL) {
             memcpy(msg + diff, (char**) args[i], argSize[i]);
@@ -71,7 +72,6 @@ int requestFileSys(void** args, int argNum, int* argSize, uint8_t opCode) {
     if (sendRes != -1 && reply != -1) {
         return reply;
     } else {
-        
         if (opCode == 1) {
             printf("iolib: Error encountered in Open()\n");
         } else if (opCode == 2) {
@@ -105,6 +105,7 @@ int requestFileSys(void** args, int argNum, int* argSize, uint8_t opCode) {
         } else if (opCode == 16) {
             printf("iolib: Error encountered in Shutdown()\n");
         }
+        return reply;
     }
 }
 
@@ -146,8 +147,6 @@ int Close(int fd) {
         oft[fd].pos = 0;
         currNumOpenFile--;
         return 0;
-
-    //fd is not the descriptor number of a file currently open in this process
     } else {
         printf("iolib: Close(): fd is not the descriptor number of a file currently open\n");
         return ERROR;
@@ -313,7 +312,7 @@ int SymLink(char *oldname, char *newname) {
     free(newPath1);
     free(newPath2);
     if (resp != ERROR) {
-        return resp;
+        return 0;
     }
     TracePrintf(1, "iolib: SymLink(): Error in response\n");
     return ERROR;

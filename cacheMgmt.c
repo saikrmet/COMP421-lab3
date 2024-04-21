@@ -1,5 +1,4 @@
 #include "cacheMgmt.h"
-#include "yfs.h"
 
 #include <comp421/filesystem.h>
 
@@ -74,7 +73,7 @@ void insertBlockIntoHashTable(struct blockMetadata* metadata, int cacheKey) {
     int currHash = cacheKey % BLOCK_CACHESIZE;
 
     while (blockHashTable[currHash] != NULL && blockHashTable[currHash]->cacheKey != -1) {
-        currHash++
+        currHash++;
         currHash %= BLOCK_CACHESIZE;
     }
     blockHashTable[currHash] = entry;
@@ -82,7 +81,7 @@ void insertBlockIntoHashTable(struct blockMetadata* metadata, int cacheKey) {
 
 struct blockEntry* removeBlockFromHashTable(int num) {
 
-    int currHash = cacheKey % BLOCK_CACHESIZE;
+    int currHash = num % BLOCK_CACHESIZE;
     int firstHash = currHash;
 
     while (blockHashTable[currHash] != NULL) {
@@ -184,7 +183,6 @@ struct blockMetadata* fetchLRUBlock(int num) {
 }
 
 int syncDiskCache() {
-    struct blockMetadata* currBlock = firstBlock;
     struct inodeMetadata* currInode = firstInode;
 
     while (currInode != NULL) {
@@ -200,6 +198,8 @@ int syncDiskCache() {
         }
         currInode = currInode->next;
     }
+
+    struct blockMetadata* currBlock = firstBlock;
 
     while (currBlock != NULL) {
         if (currBlock->isDirty == 1) {
@@ -290,14 +290,14 @@ void insertInodeIntoHashTable(struct inodeMetadata* metadata, int cacheKey) {
     int currHash = cacheKey % INODE_CACHESIZE;
 
     while (inodeHashTable[currHash] != NULL && inodeHashTable[currHash]->cacheKey != -1) {
-        currHash++
+        currHash++;
         currHash %= INODE_CACHESIZE;
     }
     inodeHashTable[currHash] = entry;
 }
 
 struct inodeEntry* removeInodeFromHashTable(int num) {
-    int currHash = cacheKey % INODE_CACHESIZE;
+    int currHash = num % INODE_CACHESIZE;
     int firstHash = currHash;
 
     while (inodeHashTable[currHash] != NULL) {
@@ -397,6 +397,36 @@ struct inodeMetadata* fetchLRUInode(int num) {
     }
 }
 
+void updateLRUInode(struct inodeMetadata* newMetadata, int num) {
+    struct inodeEntry* cache = fetchInode(num);
+
+    if (cache != NULL) {
+        removeSpecificInode(cache->metadata);
+        addInodeToQueue(newMetadata);
+        insertInodeIntoHashTable(newMetadata, num);
+    } else {
+        if (currInodeNum >= INODE_CACHESIZE) {
+            int removeNum = firstInode->num;
+            removeInodeFromHashTable(removeNum);
+            syncDiskCache();
+            if (firstInode->isDirty == 1) {
+                int blockNum =  removeNum / (BLOCKSIZE / INODESIZE) + 1;
+                struct blockMetadata* newBlock = readBlockFromDisk(blockNum);
+                int temp1 = (blockNum - 1) * (BLOCKSIZE / INODESIZE);
+                int temp2 = (num - temp1) * INODESIZE;
+                memcpy((void*) (newBlock->data + temp2), (void*) firstInode->value, INODESIZE);
+                newBlock->isDirty = 1;
+            }
+            removeFirstInode();
+            removeInodeFromHashTable(removeNum);
+            currInodeNum--;
+        }
+        addInodeToQueue(newMetadata);
+        insertInodeIntoHashTable(newMetadata, num);
+        currInodeNum++;
+    }
+}
+
 struct inodeMetadata* readInodeFromDisk(int num) {
     struct inodeMetadata* lruInode = fetchLRUInode(num);
 
@@ -416,35 +446,6 @@ struct inodeMetadata* readInodeFromDisk(int num) {
         int temp2 = (num - temp1) * INODESIZE;
         memcpy(lruInode->value, newBlock->data + temp2, INODESIZE);
         updateLRUInode(lruInode, num);
-    }
-}
-
-void updateLRUInode(struct inodeMetadata* newMetadata, int num) {
-    struct inodeEntry* cache = fetchInode(num);
-
-    if (cache != NULL) {
-        removeSpecificInode(cache->metadata);
-        addInodeToQueue(newMetadata);
-        insertInodeIntoHashTable(newMetadata, num);
-    } else {
-        if (currInodeNum >= INODE_CACHESIZE) {
-            int removeNum = firstInode->num;
-            removeInodeFromHashTable(removeNum);
-            syncDiskCache();
-            if (firstInode->isDirty == 1) {
-                int blockNum =  removeNum / (BLOCKSIZE / INODESIZE) + 1;
-                struct blockMetadata* newBlock = readBlockFromDisk(blockNum);
-                int temp1 = (blockNum - 1) * (BLOCKSIZE / INODESIZE);
-                int temp2 = (num - temp1) * INODESIZE;
-                memcpy((void*) newBlock->data + temp2, (void*) firstInode->value, INODESIZE);
-                newBlock->isDirty = 1;
-            }
-            removeFirstInode();
-            removeInodeFromHashTable(removeNum);
-            currInodeNum--;
-        }
-        addInodeToQueue(newMetadata);
-        insertInodeIntoHashTable(newMetadata, num);
-        currInodeNum++;
+        return lruInode;
     }
 }
