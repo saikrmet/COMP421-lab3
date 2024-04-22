@@ -46,7 +46,6 @@ void startCache() {
 }
 
 struct blockEntry* fetchBlock(int cacheKey) {
-    TracePrintf(1, "fetchBlock()\n");
     int currHash = cacheKey % BLOCK_CACHESIZE;
     int firstHash = currHash;
 
@@ -68,7 +67,6 @@ struct blockEntry* fetchBlock(int cacheKey) {
 }
 
 void insertBlockIntoHashTable(struct blockMetadata* metadata, int cacheKey) {
-    TracePrintf(1, "insertBlockIntoHashTable()\n");
     struct blockEntry* entry = (struct blockEntry*) malloc(sizeof(struct blockEntry));
     entry->cacheKey = cacheKey;
     entry->metadata = metadata;
@@ -82,7 +80,6 @@ void insertBlockIntoHashTable(struct blockMetadata* metadata, int cacheKey) {
 }
 
 struct blockEntry* removeBlockFromHashTable(int num) {
-    TracePrintf(1, "removeBlockFromHashTable()\n");
     int currHash = num % BLOCK_CACHESIZE;
     int firstHash = currHash;
 
@@ -107,13 +104,10 @@ struct blockEntry* removeBlockFromHashTable(int num) {
 
 
 void addBlockToQueue(struct blockMetadata* metadata) {
-    TracePrintf(1, "addBlockToQueue()\n");
     if (firstBlock != NULL || lastBlock != NULL) {
         // Add and increment lastBlock
         metadata->prev = lastBlock;
-        TracePrintf(1, "metadata->prev = lastBlock\n");
         lastBlock->next = metadata;
-        //TracePrintf(1, lastBlock->num);
         lastBlock = metadata;
         firstBlock->prev = NULL;
         lastBlock->next = NULL;
@@ -127,7 +121,6 @@ void addBlockToQueue(struct blockMetadata* metadata) {
 }
 
 void removeFirstBlock() {
-    TracePrintf(1, "removFirstBlock()\n");
     if (firstBlock != NULL) {
         if (firstBlock != lastBlock) {
             //Remove firstBlock
@@ -149,7 +142,6 @@ void removeFirstBlock() {
 }
 
 void removeLastBlock() {
-    TracePrintf(1, "removeLastBlock()\n");
     if (lastBlock != NULL) {
         if (firstBlock != lastBlock) {
             //Remove lastBlock
@@ -172,7 +164,6 @@ void removeLastBlock() {
 
 
 void removeSpecificBlock(struct blockMetadata* metadata) {
-    TracePrintf(1, "removeSpecificBlock()\n");
     if (metadata->prev == NULL && metadata->next != NULL) {
         removeFirstBlock();
     } else if (metadata->prev != NULL && metadata->next == NULL) {
@@ -186,7 +177,6 @@ void removeSpecificBlock(struct blockMetadata* metadata) {
 }
 
 struct blockMetadata* fetchLRUBlock(int num) {
-    TracePrintf(1, "fetchLRUBlock()\n");
     struct blockEntry* lruBlock = fetchBlock(num);
     if (lruBlock != NULL) {
         removeSpecificBlock(lruBlock->metadata);
@@ -232,7 +222,6 @@ int syncDiskCache() {
 }
 
 void removeAndSyncBlock() {
-    TracePrintf(1, "removeAndSyncBlock()\n");
     if (currBlockNum >= BLOCK_CACHESIZE) {
         int removeNum = firstBlock->num;
         syncDiskCache();
@@ -246,7 +235,6 @@ void removeAndSyncBlock() {
 }
 
 void updateLRUBlock(struct blockMetadata* newMetadata, int num) {
-    TracePrintf(1, "updateLRUBlock()\n");
     struct blockEntry* currBlock = fetchBlock(num);
 
     if (currBlock != NULL) {
@@ -280,7 +268,6 @@ struct blockMetadata* readBlockFromDisk(int num) {
 //******************************************************************************
 
 struct inodeEntry* fetchInode(int cacheKey) {
-    TracePrintf(1, "fetchInode()\n");
     int currHash = cacheKey % INODE_CACHESIZE;
     int firstHash = currHash;
 
@@ -303,7 +290,6 @@ struct inodeEntry* fetchInode(int cacheKey) {
 
 
 void insertInodeIntoHashTable(struct inodeMetadata* metadata, int cacheKey) {
-    TracePrintf(1, "insertInodeIntoHashTable()\n");
     struct inodeEntry* entry = (struct inodeEntry*) malloc(sizeof(struct inodeEntry));
     entry->cacheKey = cacheKey;
     entry->metadata = metadata;
@@ -317,7 +303,6 @@ void insertInodeIntoHashTable(struct inodeMetadata* metadata, int cacheKey) {
 }
 
 struct inodeEntry* removeInodeFromHashTable(int num) {
-    TracePrintf(1, "removeInodeFromHashTable()\n");
     int currHash = num % INODE_CACHESIZE;
     int firstHash = currHash;
 
@@ -341,7 +326,6 @@ struct inodeEntry* removeInodeFromHashTable(int num) {
 }
 
 void addInodeToQueue(struct inodeMetadata* metadata) {
-    TracePrintf(1, "addInodeToQueue()\n");
     if (firstInode != NULL || lastInode != NULL) {
         // Add and increment lastInode
         metadata->prev = lastInode;
@@ -360,7 +344,6 @@ void addInodeToQueue(struct inodeMetadata* metadata) {
 
 
 void removeFirstInode() {
-    TracePrintf(1, "removeLastInode()\n");
     if (firstInode != NULL) {
         if (firstInode != lastInode) {
             //Remove firstInode
@@ -379,7 +362,6 @@ void removeFirstInode() {
 }
 
 void removeLastInode() {
-    TracePrintf(1, "removeLastInode()\n");
     if (lastInode != NULL) {
         if (firstInode != lastInode) {
             //Remove lastInode
@@ -397,8 +379,7 @@ void removeLastInode() {
     TracePrintf(1, "removeLastInode(): queue empty\n");
 }
 
-void removeSpecificInode(struct inodeMetadata* metadata) {
-    TracePrintf(1, "removeSpecificInode()\n");    
+void removeSpecificInode(struct inodeMetadata* metadata) {  
     if (metadata->prev == NULL && metadata->next != NULL) {
         removeFirstInode();
     } else if (metadata->prev != NULL && metadata->next == NULL) {
@@ -412,7 +393,6 @@ void removeSpecificInode(struct inodeMetadata* metadata) {
 }
 
 struct inodeMetadata* fetchLRUInode(int num) {
-    TracePrintf(1, "fetchLRUInode()\n");
     struct inodeEntry* lruInode = fetchInode(num);
     if (lruInode != NULL) {
         removeSpecificInode(lruInode->metadata);
@@ -424,7 +404,6 @@ struct inodeMetadata* fetchLRUInode(int num) {
 }
 
 void updateLRUInode(struct inodeMetadata* newMetadata, int num) {
-    TracePrintf(1, "updateLRUInode()\n");
     struct inodeEntry* cache = fetchInode(num);
 
     if (cache != NULL) {

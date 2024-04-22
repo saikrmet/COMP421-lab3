@@ -14,4 +14,5 @@ main()
 	printf("\n%d\n\n", Create("/foo/zzz"));
 
 	Shutdown();
+	return 0;
 }

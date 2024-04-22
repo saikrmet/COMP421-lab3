@@ -51,4 +51,5 @@ main()
 	printf("buffer = '%s'\n", buffer);
 
 	Shutdown();
+	return 0;
 }

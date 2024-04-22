@@ -14,4 +14,5 @@ main()
 	printf("\n%d\n\n", Unlink("/foo"));
 
 	Shutdown();
+	return 0;
 }
