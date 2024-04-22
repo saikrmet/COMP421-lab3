@@ -4,12 +4,11 @@
 #include <comp421/yalnix.h>
 
 #include "cacheMgmt.h"
-#include "yfs.h"
 
 struct openFileInfo {
     short inodeNum;
     int pos;
-}
+};
 
 struct openFileInfo oft[MAX_OPEN_FILES];
 
@@ -20,8 +19,8 @@ short dirName;
 void createOFT() {
     int i;
     for (i = 0; i < MAX_OPEN_FILES; i++) {
-        openFileTable[i].inodeNum = -1;
-        openFileTable[i].pos = 0;
+        oft[i].inodeNum = -1;
+        oft[i].pos = 0;
     }
     oftCreated = 1;
     currNumOpenFile = 0;
@@ -66,7 +65,7 @@ int requestFileSys(void** args, int argNum, int* argSize, uint8_t opCode) {
             return ERROR;
         }
     }
-    int sendRes = Send(msg, -1);
+    int sendRes = Send(msg, -FILE_SERVER);
     int reply = *(int*) msg;
 
     if (sendRes != -1 && reply != -1) {
