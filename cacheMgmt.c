@@ -111,7 +111,9 @@ void addBlockToQueue(struct blockMetadata* metadata) {
     if (firstBlock != NULL || lastBlock != NULL) {
         // Add and increment lastBlock
         metadata->prev = lastBlock;
+        TracePrintf(1, "metadata->prev = lastBlock\n");
         lastBlock->next = metadata;
+        //TracePrintf(1, lastBlock->num);
         lastBlock = metadata;
         firstBlock->prev = NULL;
         lastBlock->next = NULL;
@@ -133,10 +135,11 @@ void removeFirstBlock() {
             secondBlock->prev = NULL;
             firstBlock->next = NULL;
             firstBlock->prev = NULL;
-            firstBlock = firstBlock->next;
+            firstBlock = secondBlock;
             return;
 
         } else {
+            TracePrintf(1, "firstBlock = lastBlock;\n");
             firstBlock = NULL;
             lastBlock = NULL;
             return;
@@ -154,10 +157,11 @@ void removeLastBlock() {
             secondLastBlock->next = NULL;
             lastBlock->next = NULL;
             lastBlock->prev = NULL;
-            lastBlock = lastBlock->prev;
+            lastBlock = secondLastBlock;
             return;
 
         } else {
+            TracePrintf(1, "firstBlock = lastBlock;\n");
             firstBlock = NULL;
             lastBlock = NULL;
             return;
@@ -364,7 +368,7 @@ void removeFirstInode() {
             secondInode->prev = NULL;
             firstInode->next = NULL;
             firstInode->prev = NULL;
-            firstInode = firstInode->next;
+            firstInode = secondInode;
 
         } else {
             firstInode = NULL;
@@ -383,7 +387,7 @@ void removeLastInode() {
             secondLastInode->next = NULL;
             lastInode->next = NULL;
             lastInode->prev = NULL;
-            lastInode = lastInode->prev;
+            lastInode = secondLastInode;
 
         } else {
             firstInode = NULL;

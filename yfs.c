@@ -604,7 +604,7 @@ void createFreeInodeAndBlock() {
     struct fs_header* fsh = (struct fs_header*)(id->value);
 
     inode_size = fsh->num_inodes;
-    inode_size = fsh->num_blocks;
+    block_size = fsh->num_blocks;
 
     // initialize the free inodes list and free block list
     inodes_free = (short*)malloc(inode_size * sizeof(short));
